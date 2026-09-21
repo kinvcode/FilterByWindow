@@ -71,13 +71,15 @@ DWORD getPid(const wchar_t* processName);
 
 ULONG64 getModuleBase(DWORD pid, const wchar_t* moduleName);
 
+ULONG64 getModuleExport(DWORD pid, ULONG64 moduleBase, PCSTR funcName);
+
 bool protectPid(ULONG64 processId);
 
 bool unprotectPid();
 
 bool remoteThread(ULONG64 processId, ULONG64 address);
 
-bool injectionDll(ULONG64 processId, const wchar_t* dllPath);
+bool injectionDll(ULONG64 processId, PCWSTR dllPath);
 
 bool apcInject(ULONG64 processId, const void* dllBuffer, ULONG64 dllSize);
 
