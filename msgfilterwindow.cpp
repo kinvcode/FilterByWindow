@@ -11,7 +11,9 @@
 #include <memory>
 
 namespace {
+
 constexpr ULONG64 kRemoteBufferSize = 0x1000;
+constexpr ULONG64 HOOK_ADDRESS = 0x14668CDE0;
 
 bool isExecutableProtection(ULONG protection)
 {
@@ -29,6 +31,7 @@ bool isExecutableProtection(ULONG protection)
         return false;
     }
 }
+
 }
 
 MsgFilterWindow::MsgFilterWindow(QWidget *parent)
@@ -37,7 +40,7 @@ MsgFilterWindow::MsgFilterWindow(QWidget *parent)
 {
     ui->setupUi(this);
     ui->tableWidget_msgList->setColumnCount(2);
-    ui->tableWidget_msgList->setHorizontalHeaderLabels({tr("时间"), tr("数据指针")});
+    ui->tableWidget_msgList->setHorizontalHeaderLabels({tr("时间"), tr("窗口类型")});
     ui->tableWidget_msgList->horizontalHeader()->setStretchLastSection(true);
 }
 
@@ -50,7 +53,7 @@ MsgFilterWindow::~MsgFilterWindow()
 }
 
 
-bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
+bool MsgFilterWindow::hook(DWORD pid)
 {
     ULONG64 shadowpage_address = 0;
     ULONG64 asmcode_address = 0;
@@ -85,6 +88,7 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
         return false;
     }
 
+    ULONG64 hook_address = HOOK_ADDRESS; // 依靠特征码
     // 计算HOOK页面的地址和hook位置偏移
     uintptr_t hook_page_start  = hook_address & ~0xFFF;
     void*     hook_page_ptr    = reinterpret_cast<void*>(hook_page_start);
@@ -185,52 +189,60 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
     // 构造PostMessageA函数汇编
 
     std::vector<byte>asmData;
-    asmData = makeByteArray({0x50});                    // push rax
-    asmData = asmData + makeByteArray({0x53});          // push rbx
-    asmData = asmData + makeByteArray({0x51});          // push rcx
-    asmData = asmData + makeByteArray({0x52});          // push rdx
-    asmData = asmData + makeByteArray({0x56});          // push rsi
-    asmData = asmData + makeByteArray({0x57});          // push rdi
-    asmData = asmData + makeByteArray({0x41, 0x50});    // push r8
-    asmData = asmData + makeByteArray({0x41, 0x51});    // push r9
-    asmData = asmData + makeByteArray({0x41, 0x52});    // push r10
-    asmData = asmData + makeByteArray({0x41, 0x53});    // push r11
-    asmData = asmData + makeByteArray({0x41, 0x54});    // push r12
-    asmData = asmData + makeByteArray({0x41, 0x55});    // push r13
-    asmData = asmData + makeByteArray({0x41, 0x56});    // push r14
-    asmData = asmData + makeByteArray({0x41, 0x57});    // push r15
-    asmData = asmData + makeByteArray({0x48, 0x83, 0xEC, 0x28});                            // sub rsp,0x28
+
+    asmData = asmData + makeByteArray({0x9C});                      // pushfq
+    asmData = asmData + makeByteArray({0x50});                      // push rax
+    asmData = asmData + makeByteArray({0x53});                      // push rbx
+    asmData = asmData + makeByteArray({0x51});                      // push rcx
+    asmData = asmData + makeByteArray({0x52});                      // push rdx
+    asmData = asmData + makeByteArray({0x56});                      // push rsi
+    asmData = asmData + makeByteArray({0x57});                      // push rdi
+    asmData = asmData + makeByteArray({0x55});                      // push rbp
+    asmData = asmData + makeByteArray({0x41, 0x50});                // push r8
+    asmData = asmData + makeByteArray({0x41, 0x51});                // push r9
+    asmData = asmData + makeByteArray({0x41, 0x52});                // push r10
+    asmData = asmData + makeByteArray({0x41, 0x53});                // push r11
+    asmData = asmData + makeByteArray({0x41, 0x54});                // push r12
+    asmData = asmData + makeByteArray({0x41, 0x55});                // push r13
+    asmData = asmData + makeByteArray({0x41, 0x56});                // push r14
+    asmData = asmData + makeByteArray({0x41, 0x57});                // push r15
+    asmData = asmData + makeByteArray({0x48, 0x83, 0xEC, 0x28});    // sub rsp, 0x28 → RSP ≡ 0 (mod 16)
+
+    // hook后的实际逻辑
     asmData = asmData + makeByteArray({0x48, 0xB9}) + longToBytes(my_window_handle);        // mov rcx,窗口句柄
-    asmData = asmData + makeByteArray({0x48, 0xBA}) + longToBytes(WM_MY_CUSTOM_MESSAGE);    // mov rcx,消息类型
-    asmData = asmData + makeByteArray({0x4D, 0x8B, 0xC8});                                  // mov r9, r8 // 数据指针传给参数3
+    asmData = asmData + makeByteArray({0x48, 0xBA}) + longToBytes(WM_MY_CUSTOM_MESSAGE);    // mov rdx,消息类型
+    asmData = asmData + makeByteArray({0x4C, 0x8B, 0xCA});                                  // mov r9, rdx // 数据指针传给参数4
     asmData = asmData + makeByteArray({0x4D, 0x31, 0xC0});                                  // xor r8, r8
     asmData = asmData + makeByteArray({0x48, 0xB8}) + longToBytes(PostMessageA);            // mov rax, PostMessageA
     asmData = asmData + makeByteArray({0xFF, 0xD0});                                        // call rax
-    asmData = asmData + makeByteArray({0x48, 0x83, 0xC4, 0x28});                            // add rsp, 0x28
-    asmData = asmData + makeByteArray({0x41, 0x5F});    // pop r15
-    asmData = asmData + makeByteArray({0x41, 0x5E});    // pop r14
-    asmData = asmData + makeByteArray({0x41, 0x5D});    // pop r13
-    asmData = asmData + makeByteArray({0x41, 0x5C});    // pop r12
-    asmData = asmData + makeByteArray({0x41, 0x5B});    // pop r11
-    asmData = asmData + makeByteArray({0x41, 0x5A});    // pop r10
-    asmData = asmData + makeByteArray({0x41, 0x59});    // pop r9
-    asmData = asmData + makeByteArray({0x41, 0x58});    // pop r8
-    asmData = asmData + makeByteArray({0x5F});          // pop rdi
-    asmData = asmData + makeByteArray({0x5E});          // pop rsi
-    asmData = asmData + makeByteArray({0x5A});          // pop rdx
-    asmData = asmData + makeByteArray({0x59});          // pop rcx
-    asmData = asmData + makeByteArray({0x5B});          // pop rbx
-    asmData = asmData + makeByteArray({0x58});          // pop rax
 
-    // 加上HOOK函数代码，注意修复地址：48 BA C0 4E C8 41 F6 7F 00 00
-    asmData = asmData + makeByteArray({0x41,0xB8,0x02,0x00,0x00,0x00});
-    asmData = asmData + makeByteArray({0x48,0xBA,0xC0,0x4E,0x65,0x1B,0xF7,0x7F,0x00,0x00});
+    asmData = asmData + makeByteArray({0x48, 0x83, 0xC4, 0x28});    // add rsp, 0x28
+    asmData = asmData + makeByteArray({0x41, 0x5F});                // pop r15
+    asmData = asmData + makeByteArray({0x41, 0x5E});                // pop r14
+    asmData = asmData + makeByteArray({0x41, 0x5D});                // pop r13
+    asmData = asmData + makeByteArray({0x41, 0x5C});                // pop r12
+    asmData = asmData + makeByteArray({0x41, 0x5B});                // pop r11
+    asmData = asmData + makeByteArray({0x41, 0x5A});                // pop r10
+    asmData = asmData + makeByteArray({0x41, 0x59});                // pop r9
+    asmData = asmData + makeByteArray({0x41, 0x58});                // pop r8
+    asmData = asmData + makeByteArray({0x5D});                      // pop rbp
+    asmData = asmData + makeByteArray({0x5F});                      // pop rdi
+    asmData = asmData + makeByteArray({0x5E});                      // pop rsi
+    asmData = asmData + makeByteArray({0x5A});                      // pop rdx
+    asmData = asmData + makeByteArray({0x59});                      // pop rcx
+    asmData = asmData + makeByteArray({0x5B});                      // pop rbx
+    asmData = asmData + makeByteArray({0x58});                      // pop rax
+    asmData = asmData + makeByteArray({0x9D});                      // popfq
 
-    // asmData = asmData + raw_bytearray;
+    // 执行被覆盖指令，然后跳回hook继续执行
+    asmData = asmData + makeByteArray({0x48, 0x8B, 0xC4});          // mov rax, rsp
+    asmData = asmData + makeByteArray({0x4C, 0x89, 0x48, 0x20});    // mov [rax+0x20], r9
+    asmData = asmData + makeByteArray({0x4C, 0x89, 0x40, 0x18});    // mov [rax+0x18], r8
+    asmData = asmData + makeByteArray({0x89, 0x50, 0x10});          // mov [rax+0x10], edx
+    asmData = asmData + makeByteArray({0xFF, 0x25, 0x00, 0x00, 0x00, 0x00});	// jmp [rip+0]
+    asmData = asmData + longToBytes(hook_address + kHookCodeSize);              // hook位置,kHookCodeSize是覆盖指令的大小
 
-    // 使用RIP相对的绝对间接跳转，避免远程内存与HOOK地址相距超过2GB时
-    // 32位相对偏移溢出，同时不破坏刚刚恢复的任何通用寄存器。
-    asmData = asmData + makeByteArray({0xFF, 0x25, 0x00, 0x00, 0x00, 0x00}) + longToBytes(hook_address + kHookCodeSize);
+
     // 写入汇编，HOOK启动
     if (!writeMemory(pid, asmcode_address, asmData.size(), asmData.data())) {
         qDebug() << "写入汇编失败~";
@@ -239,15 +251,16 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
     }
 
     // 构造JMP指令，跳转到我们的代码
-    // mov rax, 0x0000000142F0147C  ;48 B8 XX
+    // mov rax, 0x0000000142F0147C  ;48 B8 XX XX XX XX XX XX XX XX
     // jmp rax                      ;FF E0
-    // nop                          ;90
-    // 需要15个字节
+    // nop                          ;90 90
+    // 需要14个字节
     BYTE jmp_code[kHookCodeSize] = {0};
     jmp_code[0] = 0x48;
     jmp_code[1] = 0xB8;
-    jmp_code[kHookCodeSize-3] = 0xFF;
-    jmp_code[kHookCodeSize-2] = 0xE0;
+    jmp_code[kHookCodeSize-4] = 0xFF;
+    jmp_code[kHookCodeSize-3] = 0xE0;
+    jmp_code[kHookCodeSize-2] = 0x90;
     jmp_code[kHookCodeSize-1] = 0x90;
 
     ULONG64 jmp_address = asmcode_address;
@@ -288,12 +301,14 @@ bool MsgFilterWindow::unhook()
 {
     if (_hook_data.is_hooked) {
         if (_hook_data.hook_pfn != 0) {
+            qDebug() << "EPT HOOK卸载";
             remove_ept_hook(_hook_data.hook_pfn);
         }
         _hook_data.is_hooked = false;
     }
 
     if (_hook_data.shadowpage_address != 0) {
+        qDebug() << "释放影子页";
         if (!freeMemory(_hook_data.pid, _hook_data.shadowpage_address)) {
             return false;
         }
@@ -301,6 +316,7 @@ bool MsgFilterWindow::unhook()
     }
 
     if (_hook_data.allocated_address != 0) {
+        qDebug() << "释放汇编页";
         if (!freeMemory(_hook_data.pid, _hook_data.allocated_address)) {
             return false;
         }
@@ -318,7 +334,7 @@ bool MsgFilterWindow::nativeEvent(const QByteArray &eventType, void *message, qi
         if (msg->message == WM_MY_CUSTOM_MESSAGE) {
 
             LPARAM lParam = msg->lParam;
-            qDebug() << "接收指针：" << QString::number(lParam, 16);
+            qDebug() << "窗口类型：" << "0x" + QString::number(lParam, 16).toUpper();
 
             const int row = ui->tableWidget_msgList->rowCount();
             ui->tableWidget_msgList->insertRow(row);
@@ -345,6 +361,11 @@ bool MsgFilterWindow::nativeEvent(const QByteArray &eventType, void *message, qi
 
 void MsgFilterWindow::on_pushButton_startHook_clicked()
 {
+    if(!is_hv_running()){
+        QMessageBox::warning(this, tr("提示"), tr("未安装驱动！"));
+        return;
+    }
+
     if(_hook_data.is_hooked)
     {
         QMessageBox::information(this, tr("提示"), tr("当前窗口已经启用HOOK。"));
@@ -352,10 +373,9 @@ void MsgFilterWindow::on_pushButton_startHook_clicked()
     }
 
     const QString process_text = ui->lineEdit_processId->text().trimmed();
-    QString process_address = ui->lineEdit_processAddress->text().trimmed();
 
-    if (process_text.isEmpty() || process_address.isEmpty()) {
-        QMessageBox::warning(this, tr("参数错误"), tr("请输入目标进程名和HOOK地址。"));
+    if (process_text.isEmpty()) {
+        QMessageBox::warning(this, tr("参数错误"), tr("请输入目标进程名"));
         return;
     }
 
@@ -371,13 +391,9 @@ void MsgFilterWindow::on_pushButton_startHook_clicked()
         return;
     }
 
-    if (process_address.startsWith(QStringLiteral("0x"), Qt::CaseInsensitive)) {
-        process_address.remove(0, 2);
-    }
-    bool address_ok = false;
-    const ULONG64 target_address = process_address.toULongLong(&address_ok, 16);
+    const ULONG64 target_address = HOOK_ADDRESS;
 
-    if(!address_ok || target_address == 0){
+    if(target_address == 0){
         QMessageBox::warning(this, tr("地址错误"), tr("HOOK地址不是有效的十六进制地址。"));
         return;
     }
@@ -395,16 +411,14 @@ void MsgFilterWindow::on_pushButton_startHook_clicked()
     }
 
     qDebug() << "目标PID：" << target_pid;
-    qDebug() << "函数地址：" << QString::number(target_address,16).toUpper();
 
     // 如果未开启HOOK，则创建一个HOOK
-    if (!hook(target_pid,target_address)) {
+    if (!hook(target_pid)) {
         QMessageBox::critical(this, tr("HOOK失败"), tr("安装HOOK失败，已清理本次分配的远程内存。"));
         return;
     }
 
     ui->lineEdit_processId->setEnabled(false);
-    ui->lineEdit_processAddress->setEnabled(false);
     ui->pushButton_startHook->setEnabled(false);
     QMessageBox::information(this, tr("HOOK成功"), tr("HOOK已成功安装。"));
 }

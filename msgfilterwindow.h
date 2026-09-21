@@ -90,7 +90,7 @@ private:
         BYTE raw_bytecode[kHookCodeSize] = {0};
     }_hook_data;
 
-    bool hook(DWORD pid, ULONG64 hook_address);
+    bool hook(DWORD pid);
     bool unhook();
 };
 
