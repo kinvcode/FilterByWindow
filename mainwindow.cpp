@@ -37,22 +37,4 @@ void MainWindow::on_pushButton_addHook_clicked()
     _window_vector.push_back(msg_win);
 }
 
-bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
-{
-    if (eventType == "windows_generic_MSG") {
-        MSG *msg = static_cast<MSG*>(message);
-        if (msg->message == WM_MY_CUSTOM_MESSAGE) {
-            // qDebug() << "收到自定义消息";
 
-            // WPARAM wParam = msg->wParam;
-            // qDebug() << "整数指针：" << QString::number(wParam);
-            LPARAM lParam = msg->lParam;
-            qDebug() << "收包数据指针：" << QString::number(lParam, 16);
-
-            *result = 0;
-            return true;  // 表示消息已处理
-        }
-    }
-
-    return QMainWindow::nativeEvent(eventType, message, result);
-}

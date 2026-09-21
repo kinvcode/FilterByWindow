@@ -6,9 +6,22 @@
 #include "drv/PeaceDriverAPI.h"
 
 constexpr UINT WM_MY_CUSTOM_MESSAGE = WM_USER + 100;
+constexpr ULONG64 kHookCodeSize = 13;
 
 namespace Ui {
 class MsgFilterWindow;
+}
+
+template <typename Fn>
+inline void for_each_cpu(Fn const fn) {
+    SYSTEM_INFO info = {};
+    GetSystemInfo(&info);
+
+    for (uint32_t i = 0; i < info.dwNumberOfProcessors; ++i) {
+        auto const prev_affinity = SetThreadAffinityMask(GetCurrentThread(), 1ull << i);
+        fn(i);
+        SetThreadAffinityMask(GetCurrentThread(), prev_affinity);
+    }
 }
 
 inline std::vector<byte> operator+(std::vector<byte> a, std::vector<byte> b)
@@ -54,7 +67,10 @@ class MsgFilterWindow : public QDialog
 
 public:
     explicit MsgFilterWindow(QWidget *parent = nullptr);
-    ~MsgFilterWindow();
+    ~MsgFilterWindow() override;
+
+protected:
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private slots:
     void on_pushButton_startHook_clicked();
@@ -69,7 +85,9 @@ private:
         DWORD pid = 0;
         ULONG64 hook_address = 0;
         ULONG64 allocated_address = 0;
-        BYTE raw_bytecode[12] = {0};
+        ULONG64 shadowpage_address = 0;
+        uint64_t hook_pfn = 0;
+        BYTE raw_bytecode[kHookCodeSize] = {0};
     }_hook_data;
 
     bool hook(DWORD pid, ULONG64 hook_address);

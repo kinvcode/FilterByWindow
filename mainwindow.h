@@ -22,8 +22,6 @@ private slots:
 
     void on_pushButton_addHook_clicked();
 private:
-    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result);
-private:
     Ui::MainWindow *ui;
     std::vector<MsgFilterWindow*> _window_vector;
 };

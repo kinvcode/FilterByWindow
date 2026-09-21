@@ -2,12 +2,15 @@
 #include "ui_msgfilterwindow.h"
 #include "drv/PeaceDriverAPI.h"
 
+#include <QDateTime>
+#include <QHeaderView>
 #include <QMessageBox>
+#include <QTableWidgetItem>
 #include <cstring>
 #include <limits>
+#include <memory>
 
 namespace {
-constexpr ULONG64 kHookCodeSize = 13;
 constexpr ULONG64 kRemoteBufferSize = 0x1000;
 
 bool isExecutableProtection(ULONG protection)
@@ -33,6 +36,9 @@ MsgFilterWindow::MsgFilterWindow(QWidget *parent)
     , ui(new Ui::MsgFilterWindow)
 {
     ui->setupUi(this);
+    ui->tableWidget_msgList->setColumnCount(2);
+    ui->tableWidget_msgList->setHorizontalHeaderLabels({tr("时间"), tr("数据指针")});
+    ui->tableWidget_msgList->horizontalHeader()->setStretchLastSection(true);
 }
 
 MsgFilterWindow::~MsgFilterWindow()
@@ -46,6 +52,26 @@ MsgFilterWindow::~MsgFilterWindow()
 
 bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
 {
+    ULONG64 shadowpage_address = 0;
+    ULONG64 asmcode_address = 0;
+    uint64_t hook_pfn = 0;
+    bool ept_installed = false;
+
+    const auto cleanupPartial = [&]() {
+        if (ept_installed && hook_pfn != 0) {
+            remove_ept_hook(hook_pfn);
+            ept_installed = false;
+        }
+        if (asmcode_address != 0) {
+            freeMemory(pid, asmcode_address);
+            asmcode_address = 0;
+        }
+        if (shadowpage_address != 0) {
+            freeMemory(pid, shadowpage_address);
+            shadowpage_address = 0;
+        }
+    };
+
     // 找出目标进程，user32模块PostMessageA函数地址
     const ULONG64 moduleBase = getModuleBase(pid, L"user32.dll");
     if(moduleBase == 0){
@@ -86,31 +112,38 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
     }
     qDebug() << "HOOK物理地址：" << QString::number(hook_phys_addr,16).toUpper();
 
-    uint64_t hook_pfn = hook_phys_addr >> 12;
+    hook_pfn = hook_phys_addr >> 12;
     qDebug() << "HOOK物理页帧号(PFN)：" << QString::number(hook_pfn,16).toUpper();
 
     // 在目标进程中申请一段内存，作为影子页
-    const ULONG64 shadowpage_address = allocMemory(pid, kRemoteBufferSize);
+    shadowpage_address = allocMemory(pid, kRemoteBufferSize);
     if(shadowpage_address == 0){
         qDebug() << "申请影子内存失败";
         return false;
     }
 
-    qDebug() << "申请空间：" << QString::number(shadowpage_address,16).toUpper();
+    qDebug() << "申请影子空间：" << QString::number(shadowpage_address,16).toUpper();
 
     // 复制数据到影子页
-    byte* hook_page_cache = new byte[0x1000];
-    readMemory(pid, reinterpret_cast<uint64_t>(hook_page_ptr), 0x1000, hook_page_cache);
-
-    // 修改hook
+    auto hook_page_cache = std::make_unique<byte[]>(0x1000);
+    if (!readMemory(pid, reinterpret_cast<uint64_t>(hook_page_ptr), 0x1000, hook_page_cache.get())) {
+        qDebug() << "读取HOOK页面失败";
+        cleanupPartial();
+        return false;
+    }
 
     qDebug() << "准备复制页面数据";
-    writeMemory(pid, shadowpage_address, 0x1000, hook_page_cache);
+    if (!writeMemory(pid, shadowpage_address, 0x1000, hook_page_cache.get())) {
+        qDebug() << "写入影子页失败";
+        cleanupPartial();
+        return false;
+    }
 
     // 获取影子页的物理帧
     uint64_t shadow_phys_addr = get_physical_address(target_cr3, reinterpret_cast<void*>(shadowpage_address));
     if (!shadow_phys_addr) {
         qDebug() << "无法获取影子页物理地址，后续操作中断";
+        cleanupPartial();
         return false;
     }
     qDebug() << "影子页物理地址：" << QString::number(shadow_phys_addr,16).toUpper();
@@ -119,10 +152,30 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
 
     // 创建汇编函数执行页
     // 在目标进程中申请一段内存
-    const ULONG64 asmcode_address = allocMemory(pid, 0x1000);
+    asmcode_address = allocMemory(pid, 0x1000);
     if(asmcode_address == 0){
         qDebug() << "申请汇编内存失败";
+        cleanupPartial();
         return false;
+    }
+
+    qDebug() << "申请汇编空间：" << QString::number(asmcode_address,16).toUpper();
+
+    // 需要保存HOOK位置原始字节码
+    BYTE raw_bytecode[kHookCodeSize] = {0};
+    const bool read_res = readMemory(pid, hook_address, kHookCodeSize, raw_bytecode);
+    if(!read_res){
+        qDebug() << "读取HOOK原始字节码失败";
+        cleanupPartial();
+        return false;
+    }
+
+    // 转字节容器
+    std::vector<byte> raw_bytearray;
+    raw_bytearray.resize(kHookCodeSize);
+    for (int i = 0; i < kHookCodeSize; i++)
+    {
+        raw_bytearray[i] = raw_bytecode[i];
     }
 
     // 获取本窗口句柄
@@ -168,23 +221,20 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
     asmData = asmData + makeByteArray({0x59});          // pop rcx
     asmData = asmData + makeByteArray({0x5B});          // pop rbx
     asmData = asmData + makeByteArray({0x58});          // pop rax
+
+    // 加上HOOK函数代码，注意修复地址：48 BA C0 4E C8 41 F6 7F 00 00
+    asmData = asmData + makeByteArray({0x41,0xB8,0x02,0x00,0x00,0x00});
+    asmData = asmData + makeByteArray({0x48,0xBA,0xC0,0x4E,0x65,0x1B,0xF7,0x7F,0x00,0x00});
+
+    // asmData = asmData + raw_bytearray;
+
     // 使用RIP相对的绝对间接跳转，避免远程内存与HOOK地址相距超过2GB时
     // 32位相对偏移溢出，同时不破坏刚刚恢复的任何通用寄存器。
-    asmData = asmData + makeByteArray({0xFF, 0x25, 0x00, 0x00, 0x00, 0x00})
-              + longToBytes(hook_address + kHookCodeSize);
-
+    asmData = asmData + makeByteArray({0xFF, 0x25, 0x00, 0x00, 0x00, 0x00}) + longToBytes(hook_address + kHookCodeSize);
     // 写入汇编，HOOK启动
     if (!writeMemory(pid, asmcode_address, asmData.size(), asmData.data())) {
-        freeMemory(pid, asmcode_address);
         qDebug() << "写入汇编失败~";
-        return false;
-    }
-
-    // 需要保存HOOK位置原始字节码
-    BYTE raw_bytecode[kHookCodeSize] = {0};
-    const bool read_res = readMemory(pid, hook_address, kHookCodeSize, raw_bytecode);
-    if(!read_res){
-        qDebug() << "读取HOOK原始字节码失败";
+        cleanupPartial();
         return false;
     }
 
@@ -192,7 +242,7 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
     // mov rax, 0x0000000142F0147C  ;48 B8 XX
     // jmp rax                      ;FF E0
     // nop                          ;90
-    // 需要13个字节
+    // 需要15个字节
     BYTE jmp_code[kHookCodeSize] = {0};
     jmp_code[0] = 0x48;
     jmp_code[1] = 0xB8;
@@ -203,13 +253,32 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
     ULONG64 jmp_address = asmcode_address;
     memcpy(&jmp_code[2], &jmp_address, 8);
 
-    // 必须使用vt写入，其他写入在VMX中直接跳过指令
-    write_virt_mem(target_cr3, reinterpret_cast<void*>(hook_address), jmp_code, sizeof(jmp_code));
+    qDebug() << "开始安装EPT HOOK";
+
+    for_each_cpu([&](uint32_t cpu_id) {
+        if (install_ept_hook(hook_pfn, shadow_pfn)) {
+            qDebug() << "EPT安装成功，CPU：" + QString::number(cpu_id);
+        }else{
+            qDebug() << "EPT安装失败，CPU：" + QString::number(cpu_id);
+        }
+    });
+
+    qDebug() << "EPT HOOK安装完毕";
+    ept_installed = true;
+
+    // 修改
+    write_virt_mem(target_cr3, reinterpret_cast<void*>(hook_address), jmp_code, kHookCodeSize);
+
+    // 读取修改结果，验证
+    BYTE read_code[kHookCodeSize] = {0};
+    read_virt_mem(target_cr3, read_code, reinterpret_cast<void*>(hook_address), kHookCodeSize);
 
     _hook_data.is_hooked = true;
     _hook_data.pid = pid;
     _hook_data.hook_address = hook_address;
     _hook_data.allocated_address = asmcode_address;
+    _hook_data.shadowpage_address = shadowpage_address;
+    _hook_data.hook_pfn = hook_pfn;
     memcpy(_hook_data.raw_bytecode, raw_bytecode, kHookCodeSize);
 
     return true;
@@ -218,13 +287,17 @@ bool MsgFilterWindow::hook(DWORD pid, ULONG64 hook_address)
 bool MsgFilterWindow::unhook()
 {
     if (_hook_data.is_hooked) {
-        if (!writeMemory(_hook_data.pid,
-                         _hook_data.hook_address,
-                         kHookCodeSize,
-                         _hook_data.raw_bytecode)) {
-            return false;
+        if (_hook_data.hook_pfn != 0) {
+            remove_ept_hook(_hook_data.hook_pfn);
         }
         _hook_data.is_hooked = false;
+    }
+
+    if (_hook_data.shadowpage_address != 0) {
+        if (!freeMemory(_hook_data.pid, _hook_data.shadowpage_address)) {
+            return false;
+        }
+        _hook_data.shadowpage_address = 0;
     }
 
     if (_hook_data.allocated_address != 0) {
@@ -236,6 +309,38 @@ bool MsgFilterWindow::unhook()
 
     _hook_data = {};
     return true;
+}
+
+bool MsgFilterWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    if (eventType == "windows_generic_MSG") {
+        MSG *msg = static_cast<MSG*>(message);
+        if (msg->message == WM_MY_CUSTOM_MESSAGE) {
+
+            LPARAM lParam = msg->lParam;
+            qDebug() << "接收指针：" << QString::number(lParam, 16);
+
+            const int row = ui->tableWidget_msgList->rowCount();
+            ui->tableWidget_msgList->insertRow(row);
+            ui->tableWidget_msgList->setItem(
+                row,
+                0,
+                new QTableWidgetItem(QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss.zzz"))));
+            ui->tableWidget_msgList->setItem(
+                row,
+                1,
+                new QTableWidgetItem(
+                    QStringLiteral("0x%1").arg(static_cast<qulonglong>(msg->lParam), 0, 16).toUpper()));
+            ui->tableWidget_msgList->scrollToBottom();
+
+            if (result) {
+                *result = 0;
+            }
+            return true;
+        }
+    }
+
+    return QDialog::nativeEvent(eventType, message, result);
 }
 
 void MsgFilterWindow::on_pushButton_startHook_clicked()
