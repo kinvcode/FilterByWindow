@@ -10,8 +10,6 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
-#define WM_MY_CUSTOM_MESSAGE (WM_USER + 100)
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT

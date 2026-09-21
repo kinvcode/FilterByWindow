@@ -2,7 +2,10 @@
 #define MSGFILTERWINDOW_H
 
 #include <QDialog>
+#include <vector>
 #include "drv/PeaceDriverAPI.h"
+
+constexpr UINT WM_MY_CUSTOM_MESSAGE = WM_USER + 100;
 
 namespace Ui {
 class MsgFilterWindow;
@@ -65,11 +68,12 @@ private:
         bool is_hooked = false;
         DWORD pid = 0;
         ULONG64 hook_address = 0;
+        ULONG64 allocated_address = 0;
         BYTE raw_bytecode[12] = {0};
     }_hook_data;
 
     bool hook(DWORD pid, ULONG64 hook_address);
-    void unhook();
+    bool unhook();
 };
 
 #endif // MSGFILTERWINDOW_H
