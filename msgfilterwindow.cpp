@@ -322,6 +322,7 @@ bool MsgFilterWindow::hook(DWORD pid)
 
         // 在每一个CPU上面安装EPT HOOK
         for_each_cpu([&](uint32_t cpu_id) {
+            // 交换hook页和影子页实现【读、执行】分离策略
             if (install_ept_hook(hook_pfn, shadow_pfn)) {
                 qDebug() << "EPT安装成功，CPU：" + QString::number(cpu_id);
                 ++success_count;
@@ -342,28 +343,6 @@ bool MsgFilterWindow::hook(DWORD pid)
 
         qDebug() << "EPT HOOK安装完毕";
         ept_installed = true;
-
-        // read_virt_mem 与 CPU 取指一致；仅写影子页 + install_ept_hook 不会让执行视图变成 jmp
-        // 问题1：等效于 writeMemory(pid, shadow_patch_va, kHookCodeSize, jmp_code) 吗？
-        const size_t exec_patch_len = write_virt_mem(target_cr3, reinterpret_cast<void*>(hook_address), jmp_code, kHookCodeSize);
-
-        bool hook_execute_patched = exec_patch_len == kHookCodeSize;
-        if (!hook_execute_patched) {
-            // 问题2：原始页HOOK（不应该执行这个操作，会破坏读写分离的原则）
-            hook_execute_patched = writeMemory(pid, hook_address, kHookCodeSize, jmp_code);
-        }
-
-        // 失败回滚操作
-        if (!hook_execute_patched) {
-            qDebug() << "[EPT] 执行页 patch 失败，回滚";
-            for_each_cpu([hook_pfn](uint32_t cpu_id) {
-                Q_UNUSED(cpu_id);
-                remove_ept_hook(hook_pfn);
-            });
-            ept_installed = false;
-            cleanupPartial();
-            return false;
-        }
 
     }else{
         if (!writeMemory(pid, hook_address, kHookCodeSize, jmp_code)) {
