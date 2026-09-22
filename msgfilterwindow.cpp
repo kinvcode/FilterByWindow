@@ -379,44 +379,67 @@ bool MsgFilterWindow::hook(DWORD pid)
         qDebug() << "EPT HOOK安装完毕";
         ept_installed = true;
 
-        BYTE hook_readmem[kHookCodeSize] = {};
-        BYTE hook_readvirt[kHookCodeSize] = {};
-        const bool hook_rm_ok = readMemory(pid, hook_address, kHookCodeSize, hook_readmem);
-        const size_t hook_rv_len = read_virt_mem(
-            target_cr3, hook_readvirt, reinterpret_cast<void*>(hook_address), kHookCodeSize);
+        const auto logHookViews = [&](const char* stage) {
+            BYTE hook_readmem[kHookCodeSize] = {};
+            BYTE hook_readvirt[kHookCodeSize] = {};
+            const bool hook_rm_ok = readMemory(pid, hook_address, kHookCodeSize, hook_readmem);
+            const size_t hook_rv_len = read_virt_mem(
+                target_cr3, hook_readvirt, reinterpret_cast<void*>(hook_address), kHookCodeSize);
 
-        qDebug() << "[EPT诊断] hook_address readMemory ok=" << hook_rm_ok
-                 << "bytes:" << (hook_rm_ok ? formatBytesHex(hook_readmem, kHookCodeSize) : QStringLiteral("N/A"));
-        qDebug() << "[EPT诊断] hook_address read_virt_mem len=" << hook_rv_len
-                 << "bytes:"
-                 << (hook_rv_len == kHookCodeSize ? formatBytesHex(hook_readvirt, kHookCodeSize)
-                                                  : QStringLiteral("N/A"));
+            qDebug() << "[EPT诊断][" << stage << "] readMemory ok=" << hook_rm_ok
+                     << "bytes:"
+                     << (hook_rm_ok ? formatBytesHex(hook_readmem, kHookCodeSize) : QStringLiteral("N/A"));
+            qDebug() << "[EPT诊断][" << stage << "] read_virt len=" << hook_rv_len
+                     << "bytes:"
+                     << (hook_rv_len == kHookCodeSize ? formatBytesHex(hook_readvirt, kHookCodeSize)
+                                                      : QStringLiteral("N/A"));
 
-        const bool hook_rm_eq_raw =
-            hook_rm_ok && bufferEqual(hook_readmem, raw_bytecode, kHookCodeSize);
-        const bool hook_rm_eq_jmp =
-            hook_rm_ok && bufferEqual(hook_readmem, jmp_code, kHookCodeSize);
-        const bool hook_rv_eq_raw =
-            hook_rv_len == kHookCodeSize && bufferEqual(hook_readvirt, raw_bytecode, kHookCodeSize);
-        const bool hook_rv_eq_jmp =
-            hook_rv_len == kHookCodeSize && bufferEqual(hook_readvirt, jmp_code, kHookCodeSize);
+            const bool hook_rm_eq_raw =
+                hook_rm_ok && bufferEqual(hook_readmem, raw_bytecode, kHookCodeSize);
+            const bool hook_rm_eq_jmp =
+                hook_rm_ok && bufferEqual(hook_readmem, jmp_code, kHookCodeSize);
+            const bool hook_rv_eq_raw =
+                hook_rv_len == kHookCodeSize && bufferEqual(hook_readvirt, raw_bytecode, kHookCodeSize);
+            const bool hook_rv_eq_jmp =
+                hook_rv_len == kHookCodeSize && bufferEqual(hook_readvirt, jmp_code, kHookCodeSize);
 
-        qDebug() << "[EPT诊断] readMemory@hook == raw_bytecode ?" << hook_rm_eq_raw
-                 << "(true=读视图仍是原指令，未 inline patch)";
-        qDebug() << "[EPT诊断] readMemory@hook == jmp_code ?" << hook_rm_eq_jmp
-                 << "(true=读视图已是跳转，或非EPT式直 patch)";
-        qDebug() << "[EPT诊断] read_virt@hook == raw_bytecode ?" << hook_rv_eq_raw;
-        qDebug() << "[EPT诊断] read_virt@hook == jmp_code ?" << hook_rv_eq_jmp;
+            qDebug() << "[EPT诊断][" << stage
+                     << "] readMemory==raw?" << hook_rm_eq_raw << "readMemory==jmp?" << hook_rm_eq_jmp
+                     << "read_virt==raw?" << hook_rv_eq_raw << "read_virt==jmp?" << hook_rv_eq_jmp;
 
-        uint64_t hook_phys_after = get_physical_address(target_cr3, hook_page_ptr);
-        qDebug() << "[EPT诊断] 安装后 hook_phys=0x"
-                 << QString::number(hook_phys_after, 16).toUpper()
-                 << "hook_pfn=0x" << QString::number(hook_pfn, 16).toUpper()
-                 << "PFN变化="
-                 << (hook_phys_after != 0 && (hook_phys_after >> 12) != hook_pfn);
+            if (hook_rv_eq_raw && hook_rm_eq_jmp) {
+                qDebug() << "[EPT诊断][" << stage
+                         << "] 驱动 readMemory 走影子页，read_virt/CPU 执行仍见原页 → 需 write_virt_mem patch 执行视图";
+            }
+        };
 
-        qDebug() << "[EPT诊断] 若 shadow jmp 正确且 hook 读视图仍为 raw，"
-                 << "执行应走影子页；仍不进 stub 时优先怀疑 install_ept_hook 未重定向执行或 PFN 不匹配。";
+        logHookViews("EPT安装后");
+
+        // read_virt_mem 与 CPU 取指一致；仅写影子页 + install_ept_hook 不会让执行视图变成 jmp
+        const size_t exec_patch_len = write_virt_mem(
+            target_cr3, reinterpret_cast<void*>(hook_address), jmp_code, kHookCodeSize);
+        qDebug() << "[EPT] write_virt_mem 执行页 patch 字节数=" << exec_patch_len
+                 << "期望=" << kHookCodeSize;
+
+        bool hook_execute_patched = exec_patch_len == kHookCodeSize;
+        if (!hook_execute_patched) {
+            qDebug() << "[EPT] write_virt_mem 未写满，尝试 writeMemory@hook";
+            hook_execute_patched = writeMemory(pid, hook_address, kHookCodeSize, jmp_code);
+            qDebug() << "[EPT] writeMemory@hook 结果=" << hook_execute_patched;
+        }
+
+        if (!hook_execute_patched) {
+            qDebug() << "[EPT] 执行页 patch 失败，回滚";
+            for_each_cpu([hook_pfn](uint32_t cpu_id) {
+                Q_UNUSED(cpu_id);
+                remove_ept_hook(hook_pfn);
+            });
+            ept_installed = false;
+            cleanupPartial();
+            return false;
+        }
+
+        logHookViews("执行页patch后");
     }else{
         if (!writeMemory(pid, hook_address, kHookCodeSize, jmp_code)) {
             qDebug() << "写入HOOK跳转失败";
@@ -436,6 +459,10 @@ bool MsgFilterWindow::hook(DWORD pid)
     _hook_data.allocated_address = asmcode_address;
     _hook_data.shadowpage_address = shadowpage_address;
     _hook_data.hook_pfn = hook_pfn;
+    if (USE_EPT_HOOK) {
+        _hook_data.target_cr3 = target_cr3;
+        _hook_data.hook_execute_patched = true;
+    }
     memcpy(_hook_data.raw_bytecode, raw_bytecode, kHookCodeSize);
 
     qDebug() << "[HOOK] 安装完成 is_hooked=true hook_pfn=0x"
@@ -449,6 +476,16 @@ bool MsgFilterWindow::hook(DWORD pid)
 bool MsgFilterWindow::unhook()
 {
     if(USE_EPT_HOOK){
+        if (_hook_data.hook_execute_patched && _hook_data.target_cr3 != 0
+            && _hook_data.hook_address != 0) {
+            const size_t restored = write_virt_mem(
+                _hook_data.target_cr3,
+                reinterpret_cast<void*>(_hook_data.hook_address),
+                _hook_data.raw_bytecode,
+                kHookCodeSize);
+            qDebug() << "[EPT] 还原执行页 raw_bytecode bytes=" << restored;
+        }
+
         if (_hook_data.is_hooked) {
             if (_hook_data.hook_pfn != 0) {
                 qDebug() << "EPT HOOK卸载";

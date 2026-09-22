@@ -87,6 +87,8 @@ private:
         ULONG64 allocated_address = 0;
         ULONG64 shadowpage_address = 0;
         uint64_t hook_pfn = 0;
+        ULONG64 target_cr3 = 0;
+        bool hook_execute_patched = false;
         BYTE raw_bytecode[kHookCodeSize] = {0};
     }_hook_data;
 
