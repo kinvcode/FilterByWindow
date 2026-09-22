@@ -6,7 +6,7 @@
 #include "drv/PeaceDriverAPI.h"
 
 constexpr UINT WM_MY_CUSTOM_MESSAGE = WM_USER + 100;
-constexpr ULONG64 kHookCodeSize = 13;
+constexpr ULONG64 kHookCodeSize = 14;
 
 namespace Ui {
 class MsgFilterWindow;
