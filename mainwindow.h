@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QPointer>
 #include "msgfilterwindow.h"
 
 QT_BEGIN_NAMESPACE
@@ -23,6 +24,6 @@ private slots:
     void on_pushButton_addHook_clicked();
 private:
     Ui::MainWindow *ui;
-    std::vector<MsgFilterWindow*> _window_vector;
+    QPointer<MsgFilterWindow> _msg_filter_window;
 };
 #endif // MAINWINDOW_H

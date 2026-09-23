@@ -58,9 +58,14 @@ MsgFilterWindow::MsgFilterWindow(QWidget *parent)
     , ui(new Ui::MsgFilterWindow)
 {
     ui->setupUi(this);
-    ui->tableWidget_msgList->setColumnCount(2);
-    ui->tableWidget_msgList->setHorizontalHeaderLabels({tr("时间"), tr("窗口类型")});
+
+    ui->tableWidget_msgList->setColumnCount(3);
+    ui->tableWidget_msgList->setHorizontalHeaderLabels({tr("时间"), tr("窗口类型"), tr("窗口名称")});
     ui->tableWidget_msgList->horizontalHeader()->setStretchLastSection(true);
+
+    ui->tableWidget_filterId->setColumnCount(3);
+    ui->tableWidget_filterId->setHorizontalHeaderLabels({tr("ID过滤"), tr("ID"), tr("窗口名称")});
+    ui->tableWidget_filterId->horizontalHeader()->setStretchLastSection(true);
 }
 
 MsgFilterWindow::~MsgFilterWindow()

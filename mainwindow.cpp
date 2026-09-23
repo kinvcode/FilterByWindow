@@ -29,12 +29,17 @@ MainWindow::~MainWindow()
 
 void MainWindow::on_pushButton_addHook_clicked()
 {
-    qDebug() << "123456";
+    if (_msg_filter_window) {
+        qDebug() << "窗口已存在，直接显示";
+        _msg_filter_window->show();
+        _msg_filter_window->raise();
+        _msg_filter_window->activateWindow();
+        return;
+    }
 
-    MsgFilterWindow* msg_win = new MsgFilterWindow();
-    msg_win->show();
-
-    _window_vector.push_back(msg_win);
+    qDebug() << "创建新窗口";
+    _msg_filter_window = new MsgFilterWindow();
+    _msg_filter_window->show();
 }
 
 
