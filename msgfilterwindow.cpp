@@ -2,7 +2,10 @@
 #include "ui_msgfilterwindow.h"
 #include "drv/PeaceDriverAPI.h"
 
+#include <QCheckBox>
+#include <QCloseEvent>
 #include <QDateTime>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QMessageBox>
 #include <QTableWidgetItem>
@@ -64,8 +67,78 @@ MsgFilterWindow::MsgFilterWindow(QWidget *parent)
     ui->tableWidget_msgList->horizontalHeader()->setStretchLastSection(true);
 
     ui->tableWidget_filterId->setColumnCount(3);
+    ui->tableWidget_filterId->setColumnWidth(0, 50);
     ui->tableWidget_filterId->setHorizontalHeaderLabels({tr("ID过滤"), tr("ID"), tr("窗口名称")});
     ui->tableWidget_filterId->horizontalHeader()->setStretchLastSection(true);
+
+    filter_cate = {
+        {0x1D1, QStringLiteral("个人信息"), true},
+        {0x1D2, QStringLiteral("物品栏"), true},
+    };
+    initFilterTable();
+}
+
+void MsgFilterWindow::initFilterTable()
+{
+    ui->tableWidget_filterId->setRowCount(static_cast<int>(filter_cate.size()));
+
+    for (int row = 0; row < static_cast<int>(filter_cate.size()); ++row) {
+        const FilterCate& entry = filter_cate[static_cast<size_t>(row)];
+
+        auto* check_box = new QCheckBox();
+        check_box->setChecked(entry.active);
+        const uint32_t filter_id = entry.id;
+        connect(check_box, &QCheckBox::toggled, this, [this, filter_id](bool checked) {
+            setFilterActive(filter_id, checked);
+        });
+
+        auto* check_box_container = new QWidget(ui->tableWidget_filterId);
+        auto* check_box_layout = new QHBoxLayout(check_box_container);
+        check_box_layout->setContentsMargins(0, 0, 0, 0);
+        check_box_layout->setAlignment(Qt::AlignCenter);
+        check_box_layout->addWidget(check_box);
+        ui->tableWidget_filterId->setCellWidget(row, 0, check_box_container);
+
+        auto* id_item = new QTableWidgetItem(
+            QStringLiteral("0x%1").arg(entry.id, 0, 16).toUpper());
+        id_item->setFlags(id_item->flags() & ~Qt::ItemIsEditable);
+        ui->tableWidget_filterId->setItem(row, 1, id_item);
+
+        auto* name_item = new QTableWidgetItem(entry.name);
+        name_item->setFlags(name_item->flags() & ~Qt::ItemIsEditable);
+        ui->tableWidget_filterId->setItem(row, 2, name_item);
+    }
+}
+
+QString MsgFilterWindow::filterNameForId(uint32_t id) const
+{
+    for (const FilterCate& entry : filter_cate) {
+        if (entry.id == id) {
+            return entry.name;
+        }
+    }
+    return tr("未知");
+}
+
+bool MsgFilterWindow::isFilterActive(uint32_t id) const
+{
+    for (const FilterCate& entry : filter_cate) {
+        if (entry.id == id) {
+            return entry.active;
+        }
+    }
+    return false;
+}
+
+void MsgFilterWindow::setFilterActive(uint32_t id, bool active)
+{
+    for (FilterCate& entry : filter_cate) {
+        if (entry.id == id) {
+            qDebug() << "窗口ID:0x" + QString::number(id,16).toUpper() << (active ? "激活" : "取消过滤");
+            entry.active = active;
+            return;
+        }
+    }
 }
 
 MsgFilterWindow::~MsgFilterWindow()
@@ -429,22 +502,28 @@ bool MsgFilterWindow::nativeEvent(const QByteArray &eventType, void *message, qi
         MSG *msg = static_cast<MSG*>(message);
         if (msg->message == WM_MY_CUSTOM_MESSAGE) {
 
-            LPARAM lParam = msg->lParam;
+            const uint32_t filter_id = static_cast<uint32_t>(msg->lParam);
             qDebug() << "[MSG] 收到 WM_MY_CUSTOM_MESSAGE lParam=0x"
-                     << QString::number(lParam, 16).toUpper();
+                     << QString::number(filter_id, 16).toUpper();
 
-            const int row = ui->tableWidget_msgList->rowCount();
-            ui->tableWidget_msgList->insertRow(row);
-            ui->tableWidget_msgList->setItem(
-                row,
-                0,
-                new QTableWidgetItem(QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss.zzz"))));
-            ui->tableWidget_msgList->setItem(
-                row,
-                1,
-                new QTableWidgetItem(
-                    QStringLiteral("0x%1").arg(static_cast<qulonglong>(msg->lParam), 0, 16).toUpper()));
-            ui->tableWidget_msgList->scrollToBottom();
+            if (isFilterActive(filter_id)) {
+                const int row = ui->tableWidget_msgList->rowCount();
+                ui->tableWidget_msgList->insertRow(row);
+                ui->tableWidget_msgList->setItem(
+                    row,
+                    0,
+                    new QTableWidgetItem(QDateTime::currentDateTime().toString(QStringLiteral("hh:mm:ss.zzz"))));
+                ui->tableWidget_msgList->setItem(
+                    row,
+                    1,
+                    new QTableWidgetItem(
+                        QStringLiteral("0x%1").arg(static_cast<qulonglong>(filter_id), 0, 16).toUpper()));
+                ui->tableWidget_msgList->setItem(
+                    row,
+                    2,
+                    new QTableWidgetItem(filterNameForId(filter_id)));
+                ui->tableWidget_msgList->scrollToBottom();
+            }
 
             if (result) {
                 *result = 0;
@@ -521,16 +600,33 @@ void MsgFilterWindow::on_pushButton_startHook_clicked()
 }
 
 
-void MsgFilterWindow::on_pushButton_destroyWindow_clicked()
+void MsgFilterWindow::closeEvent(QCloseEvent* event)
 {
+    const auto answer = QMessageBox::question(
+        this,
+        tr("确认关闭"),
+        tr("是否确认关闭？关闭后过滤数据不可恢复"),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    if (answer != QMessageBox::Yes) {
+        event->ignore();
+        return;
+    }
+
     if (!unhook()) {
         QMessageBox::critical(this,
                               tr("清理失败"),
                               tr("还原HOOK或释放远程内存失败。窗口将保持打开，请确认目标进程仍在运行后重试。"));
+        event->ignore();
         return;
     }
 
-    close();
+    event->accept();
     deleteLater();
+}
+
+void MsgFilterWindow::on_pushButton_destroyWindow_clicked()
+{
+    close();
 }
 

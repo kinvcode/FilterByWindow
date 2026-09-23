@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>assets/app.qss</file>
+        <file>assets/logo.ico</file>
+        <file>assets/icons/checkbox_unchecked.svg</file>
+        <file>assets/icons/checkbox_checked.svg</file>
+    </qresource>
+</RCC>

@@ -1,5 +1,7 @@
 QT += widgets
 
+RC_ICONS = assets/logo.ico
+
 CONFIG += c++17
 
 CONFIG(debug, debug|release) {
@@ -16,7 +18,8 @@ SOURCES += \
     drv/Utils.cpp \
     main.cpp \
     mainwindow.cpp \
-    msgfilterwindow.cpp
+    msgfilterwindow.cpp \
+    widgets/NeoPushButton.cpp
 
 HEADERS += \
     drv/DriverLoad.h \
@@ -24,11 +27,16 @@ HEADERS += \
     drv/Utils.h \
     drv/sys.h \
     mainwindow.h \
-    msgfilterwindow.h
+    msgfilterwindow.h \
+    widgets/NeoPushButton.h
+
+INCLUDEPATH += $$PWD
 
 FORMS += \
     mainwindow.ui \
     msgfilterwindow.ui
+
+RESOURCES += resources.qrc
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

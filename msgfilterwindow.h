@@ -2,11 +2,14 @@
 #define MSGFILTERWINDOW_H
 
 #include <QDialog>
+#include <QString>
 #include <vector>
 #include "drv/PeaceDriverAPI.h"
 
 constexpr UINT WM_MY_CUSTOM_MESSAGE = WM_USER + 100;
 constexpr ULONG64 kHookCodeSize = 14;
+
+class QCloseEvent;
 
 namespace Ui {
 class MsgFilterWindow;
@@ -70,6 +73,7 @@ public:
     ~MsgFilterWindow() override;
 
 protected:
+    void closeEvent(QCloseEvent* event) override;
     bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
 
 private slots:
@@ -78,7 +82,19 @@ private slots:
     void on_pushButton_destroyWindow_clicked();
 
 private:
+    struct FilterCate {
+        uint32_t id = 0;
+        QString name;
+        bool active = false;
+    };
+
     Ui::MsgFilterWindow *ui;
+    std::vector<FilterCate> filter_cate;
+
+    void initFilterTable();
+    QString filterNameForId(uint32_t id) const;
+    bool isFilterActive(uint32_t id) const;
+    void setFilterActive(uint32_t id, bool active);
 
     struct HOOKDATA{
         bool is_hooked = false;

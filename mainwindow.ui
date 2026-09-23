@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>MainWindow</string>
+   <string>变色龙DXF过滤器</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <widget class="QLabel" name="label">
@@ -23,10 +23,6 @@
       <height>391</height>
      </rect>
     </property>
-    <property name="styleSheet">
-     <string notr="true">color: rgb(0, 170, 255);
-font: 48pt;</string>
-    </property>
     <property name="text">
      <string>变色龙驱动</string>
     </property>
@@ -34,7 +30,10 @@ font: 48pt;</string>
      <set>Qt::AlignCenter</set>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_addHook">
+   <widget class="NeoPushButton" name="pushButton_addHook">
+    <property name="variant">
+     <enum>NeoPushButton::Accent</enum>
+    </property>
     <property name="geometry">
      <rect>
       <x>290</x>
@@ -50,12 +49,19 @@ font: 48pt;</string>
      </size>
     </property>
     <property name="text">
-     <string>添加HOOK</string>
+     <string>添加窗口过滤</string>
     </property>
    </widget>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>NeoPushButton</class>
+   <extends>QPushButton</extends>
+   <header location="global">widgets/NeoPushButton.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>
