@@ -32,7 +32,7 @@
    </widget>
    <widget class="NeoPushButton" name="pushButton_addHook">
     <property name="variant">
-     <enum>NeoPushButton::Accent</enum>
+     <enum>NeoPushButton::AccentDeep</enum>
     </property>
     <property name="geometry">
      <rect>

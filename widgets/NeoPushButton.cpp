@@ -58,6 +58,35 @@ QString variantRules(NeoPushButton::Variant variant)
             "    x1:0, y1:0, x2:1, y2:1,"
             "    stop:0 #14b8a6, stop:1 #06b6d4);"
             "}");
+    case NeoPushButton::AccentDeep:
+        return QStringLiteral(
+            "NeoPushButton {"
+            "  color: #ffffff;"
+            "  background-color: #8BDEDA;"
+            "  background-color: qlineargradient("
+            "    x1:0, y1:0, x2:1, y2:0,"
+            "    stop:0 #EF9393, stop:0.25 #E17DC2, stop:0.5 #998EE0,"
+            "    stop:0.75 #43ADD0, stop:1 #8BDEDA);"
+            "  border: 1px solid rgba(255, 255, 255, 0.45);"
+            "}"
+            "NeoPushButton:hover {"
+            "  color: #ffffff;"
+            "  background-color: qlineargradient("
+            "    x1:0, y1:0, x2:1, y2:0,"
+            "    stop:0 #F5ADAD, stop:0.25 #EE98D4, stop:0.5 #ADA3EE,"
+            "    stop:0.75 #61C2E8, stop:1 #A8EBE7);"
+            "  border: 1px solid rgba(255, 255, 255, 0.65);"
+            "}"
+            "NeoPushButton:pressed {"
+            "  color: #f8fafc;"
+            "  background-color: qlineargradient("
+            "    x1:0, y1:0, x2:1, y2:0,"
+            "    stop:0 #D97A7A, stop:0.25 #C868AE, stop:0.5 #887FD0,"
+            "    stop:0.75 #3599BC, stop:1 #76C8C4);"
+            "  border: 1px solid rgba(255, 255, 255, 0.25);"
+            "  padding-top: 11px;"
+            "  padding-bottom: 9px;"
+            "}");
     case NeoPushButton::Danger:
         return QStringLiteral(
             "NeoPushButton {"

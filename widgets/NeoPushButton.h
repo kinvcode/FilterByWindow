@@ -11,6 +11,7 @@ class NeoPushButton : public QPushButton
 public:
     enum Variant {
         Accent = 0,
+        AccentDeep,
         Secondary,
         Primary,
         Danger,

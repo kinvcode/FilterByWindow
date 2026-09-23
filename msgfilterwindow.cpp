@@ -67,9 +67,10 @@ MsgFilterWindow::MsgFilterWindow(QWidget *parent)
     ui->tableWidget_msgList->horizontalHeader()->setStretchLastSection(true);
 
     ui->tableWidget_filterId->setColumnCount(3);
-    ui->tableWidget_filterId->setColumnWidth(0, 50);
+    ui->tableWidget_filterId->setColumnWidth(0, 70);
     ui->tableWidget_filterId->setHorizontalHeaderLabels({tr("ID过滤"), tr("ID"), tr("窗口名称")});
     ui->tableWidget_filterId->horizontalHeader()->setStretchLastSection(true);
+    ui->tableWidget_filterId->verticalHeader()->setVisible(false);
 
     filter_cate = {
         {0x1D1, QStringLiteral("个人信息"), true},
