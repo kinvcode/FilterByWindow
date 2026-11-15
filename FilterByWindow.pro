@@ -10,11 +10,10 @@ CONFIG(debug, debug|release) {
     LIBS += $$PWD/lib/PeaceDriverAPI.lib
 }
 
-
 LIBS += Advapi32.lib \
 
 SOURCES += \
-    drv/DriverLoad.cpp \
+    drv/PeaceDriverLoad.cpp \
     drv/Utils.cpp \
     main.cpp \
     mainwindow.cpp \
@@ -22,8 +21,8 @@ SOURCES += \
     widgets/NeoPushButton.cpp
 
 HEADERS += \
-    drv/DriverLoad.h \
     drv/PeaceDriverAPI.h \
+    drv/PeaceDriverLoad.h \
     drv/Utils.h \
     drv/sys.h \
     mainwindow.h \

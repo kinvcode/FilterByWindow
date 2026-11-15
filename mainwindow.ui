@@ -31,9 +31,6 @@
     </property>
    </widget>
    <widget class="NeoPushButton" name="pushButton_addHook">
-    <property name="variant">
-     <enum>NeoPushButton::AccentDeep</enum>
-    </property>
     <property name="geometry">
      <rect>
       <x>290</x>
@@ -50,6 +47,19 @@
     </property>
     <property name="text">
      <string>添加窗口过滤</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButton">
+    <property name="geometry">
+     <rect>
+      <x>330</x>
+      <y>280</y>
+      <width>141</width>
+      <height>81</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>地区buff</string>
     </property>
    </widget>
   </widget>

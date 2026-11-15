@@ -72,9 +72,29 @@ MsgFilterWindow::MsgFilterWindow(QWidget *parent)
     ui->tableWidget_filterId->horizontalHeader()->setStretchLastSection(true);
     ui->tableWidget_filterId->verticalHeader()->setVisible(false);
 
+    /**
+    * #define C_WINDOW_ID_CHRONICLE 0x97 // 编年史窗口ID
+    * #define C_WINDOW_ID_ESC 0xC1E // ESC窗口ID
+    * #define C_WINDOW_ID_DIALOG 0x4AF // NPC对话窗口ID
+    * #define C_WINDOW_ID_QUEST 0x84 // 任务窗口ID
+    * #define C_WINDOW_ID_ANIMATION 0xB58 // 动画窗口ID
+    *
+    *
+    *
+    *
+    **/
+
     filter_cate = {
-        {0x1D1, QStringLiteral("个人信息"), true},
-        {0x1D2, QStringLiteral("物品栏"), true},
+        {0x97, QStringLiteral("编年史窗口"), true},
+        {0xC1E, QStringLiteral("ESC窗口"), true},
+        {0x4AF, QStringLiteral("NPC对话窗口"), true},
+        {0x84, QStringLiteral("任务窗口"), true},
+        {0xB58, QStringLiteral("动画窗口"), true},
+
+        {0x2D0, QStringLiteral("个人信息窗口"), true},
+        {0x219, QStringLiteral("物品栏窗口"), true},
+        {0x568, QStringLiteral("技能窗口"), true},
+        {0x2C9, QStringLiteral("活动1窗口"), true},
     };
     initFilterTable();
 }
@@ -124,7 +144,7 @@ QString MsgFilterWindow::filterNameForId(uint32_t id) const
 bool MsgFilterWindow::isFilterActive(uint32_t id) const
 {
     for (const FilterCate& entry : filter_cate) {
-        if (entry.id == id) {
+        if (entry.id == id && entry.active == true) {
             return entry.active;
         }
     }
@@ -507,7 +527,7 @@ bool MsgFilterWindow::nativeEvent(const QByteArray &eventType, void *message, qi
             qDebug() << "[MSG] 收到 WM_MY_CUSTOM_MESSAGE lParam=0x"
                      << QString::number(filter_id, 16).toUpper();
 
-            if (isFilterActive(filter_id)) {
+            if (!isFilterActive(filter_id)) {
                 const int row = ui->tableWidget_msgList->rowCount();
                 ui->tableWidget_msgList->insertRow(row);
                 ui->tableWidget_msgList->setItem(

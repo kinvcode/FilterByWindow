@@ -42,4 +42,3 @@ void MainWindow::on_pushButton_addHook_clicked()
     _msg_filter_window->show();
 }
 
-

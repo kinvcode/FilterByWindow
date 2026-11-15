@@ -1,6 +1,5 @@
-﻿#pragma once
-#ifndef DRIVERLOAD_H
-#define DRIVERLOAD_H
+#ifndef PEACEDRIVERLOAD_H
+#define PEACEDRIVERLOAD_H
 
 #include <windows.h>
 
@@ -21,60 +20,67 @@
 #define STATUS_ACCESS_DENIED              ((NTSTATUS)0xC0000022L) // 访问被拒绝
 #define STATUS_FLT_INSTANCE_ALTITUDE_COLLISION ((NTSTATUS)0xC0000451L) // Ob 回调 Altitude 冲突
 
-class DriverLoad
+class PeaceDriverLoad
 {
-public:
-	DriverLoad();
-
-	struct LoadDriverResult {
-		bool success = false;
-		wchar_t message[512] = {};  // 以 NUL 结尾，可当作 LPCWSTR 使用
-	};
-
-	//
-	//得到加载驱动权限的令牌
-	//
-	BOOL enableDrvLoadPrivilege();
-
-	//
-	//加载驱动
-	//
-	BOOL installDriver(LPCWSTR ServiceName, LPCWSTR DriverPath);
-
-	//
-	//启动驱动 (SCM StartService)
-	//
-	BOOL startDriver(LPCWSTR ServiceName);
-
-	//
-	//启动驱动 (NtLoadDriver，直接返回 DriverEntry NTSTATUS)
-	//
-	BOOL startDriverNt(LPCWSTR ServiceName);
-
-	//
-	//停止驱动
-	//
-	BOOL stopDriver(LPCWSTR ServiceName);
-
-	//
-	//卸载驱动
-	//
-	BOOL unInstallDriver(LPCWSTR ServiceName);
-
-	DWORD getErrorCode() const { return m_errorCode; }
-
-	/*
-	* 功能        自动加载PeaceDriver驱动
-	* 
-	* 
-	* return      是否成功，原因说明
-	*/
-	LoadDriverResult loadPeaceDriver();
-
-	BOOL driverIsLoaded();
-
-
 private:
-	DWORD m_errorCode = 0;
+    DWORD m_errorCode = 0;
+public:
+    PeaceDriverLoad();
+
+    struct LoadDriverResult {
+        bool success = false;
+        wchar_t message[512] = {};  // 以 NUL 结尾，可当作 LPCWSTR 使用
+    };
+
+    //
+    //得到加载驱动权限的令牌
+    //
+    BOOL enableDrvLoadPrivilege();
+
+    //
+    //加载驱动
+    //
+    BOOL installDriver(LPCWSTR ServiceName, LPCWSTR DriverPath);
+
+    //
+    //启动驱动 (SCM StartService)
+    //
+    BOOL startDriver(LPCWSTR ServiceName);
+
+    //
+    //启动驱动 (NtLoadDriver，直接返回 DriverEntry NTSTATUS)
+    //
+    BOOL startDriverNt(LPCWSTR ServiceName);
+
+    //
+    //停止驱动
+    //
+    BOOL stopDriver(LPCWSTR ServiceName);
+
+    //
+    //卸载驱动
+    //
+    BOOL unInstallDriver(LPCWSTR ServiceName);
+
+    DWORD getErrorCode() const { return m_errorCode; }
+
+    /*
+    * 功能        自动加载PeaceDriver驱动
+    *
+    * return      是否成功，原因说明
+    */
+    LoadDriverResult loadPeaceDriver();
+
+    /*
+    * 功能        自动卸载PeaceDriver驱动（停止服务、删除服务、清理 sys 文件）
+    *
+    * return      是否成功，原因说明
+    */
+    LoadDriverResult unloadPeaceDriver();
+
+    BOOL driverIsLoaded();
+
+    LPCWSTR NtLoadStatusToReason(DWORD status);
 };
-#endif // DRIVERLOAD_H
+
+#endif // PEACEDRIVERLOAD_H
