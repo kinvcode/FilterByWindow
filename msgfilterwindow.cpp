@@ -16,7 +16,7 @@
 namespace {
 
 constexpr ULONG64 kRemoteBufferSize = 0x1000;
-constexpr ULONG64 HOOK_ADDRESS      = 0x14668CDE0;
+constexpr ULONG64 HOOK_ADDRESS      = 0x1466640E0;
 constexpr BOOL    USE_EPT_HOOK      = TRUE;
 
 bool isExecutableProtection(ULONG protection)
@@ -173,6 +173,15 @@ MsgFilterWindow::~MsgFilterWindow()
 
 bool MsgFilterWindow::hook(DWORD pid)
 {
+
+/**
+ HOOK函数入口位置反汇编
+ 48 8B C4              - mov rax,rsp
+ 4C 89 48 20           - mov [rax+20],r9
+ 4C 89 40 18           - mov [rax+18],r8
+ 89 50 10              - mov [rax+10],edx { 窗口ID }
+**/
+
     ULONG64   shadowpage_address  = 0;
     ULONG64   asmcode_address     = 0;
     uint64_t  hook_pfn            = 0;
